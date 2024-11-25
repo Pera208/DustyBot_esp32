@@ -5,3 +5,7 @@
 .vscode/ipch
 src/credentials.h
 .vscode/settings.json
+
+include/README
+lib/README
+test/README
