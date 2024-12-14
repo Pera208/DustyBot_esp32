@@ -3,6 +3,7 @@
 #include <DHT_U.h>
 #include <WiFi.h>
 #include <Pubsubclient.h>
+#include <PMS.h>
 
 #include "credentials.h"
 
@@ -13,6 +14,16 @@
 const int mqtt_port = 1884;
 
 // put function declarations here:
+
+// Use Serial1 for the PMS sensor
+HardwareSerial MySerial(1);  // Use UART1
+PMS pms(MySerial);
+PMS::DATA data;
+
+// PMS data
+int PM1 {-1};
+int PM2_5 {-1};
+int PM10 {-1};
 
 // DHT settings
 //const int ledPin {7}
@@ -41,6 +52,10 @@ void setup() {
   dht.begin();
   Serial.println("DHT11 initialized");
 
+  // Initialize Serial1 for PMS communication
+  MySerial.begin(9600, SERIAL_8N1, 18, 17);  // 9600 baud rate, pins RX=GPIO9, TX=GPIO10
+  Serial.println("Began Serial for pms sensor");
+
   client.setServer(mqtt_server, mqtt_port);
 
   sensor_t sensor;
@@ -53,6 +68,12 @@ void loop() {
   // Reconnect if connection is lost.
   if (!client.connected()) {
     reconnect();
+  }
+
+  if (pms.read(data)) {
+    PM1 = data.PM_AE_UG_1_0;
+    PM2_5 = data.PM_AE_UG_2_5;
+    PM10 = data.PM_AE_UG_10_0;
   }
 
   // Call the function to publish sensor data.
@@ -110,6 +131,7 @@ void publishSensorData() {
 
   sensors_event_t event;
 
+  // Get dht sensor data
   dht.temperature().getEvent(&event);
   float temp {event.temperature};
   dht.humidity().getEvent(&event);
@@ -120,14 +142,23 @@ void publishSensorData() {
     return;
   }
 
+  if (PM1 == -1 || PM2_5 == -1 || PM10 == -1) {
+    Serial.println("No data from PMS sensor!");
+    return;
+  }
+
   // Create json payload
   String payload = "{";
   payload += "\"temperature\":" + String(temp) + ",";
-  payload += "\"humidity\":" + String(humidity);
+  payload += "\"humidity\":" + String(humidity) + ",";
+  payload += "\"PM1\":" + String(PM1) + ",";
+  payload += "\"PM2_5\":" + String(PM2_5) + ",";
+  payload += "\"PM10\":" + String(PM10);
+
   payload += "}";
   
-  // Publish to topic home/sensors/dht11
-  if (client.publish("home/sensors/dht11", payload.c_str())) {
+  // Publish to topic home/sensors
+  if (client.publish("home/sensors", payload.c_str())) {
     Serial.println("Sensor data published");
     Serial.println(payload);
   } else {
